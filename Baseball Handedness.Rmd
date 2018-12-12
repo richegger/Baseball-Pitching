@@ -1,0 +1,229 @@
+---
+title: "Baseball Handedness"
+author: "Rich Egger"
+date: "November 19, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Handedness in Baseball
+
+##Introduction 
+Just as most everyone has a dominant hand when writing, baseball pitchers too are designated by the hand they throw with. Here we will look at whether that handedness plays a role in how effective a pitcher is, using Lahman's database for our historical analysis. We'll also see if there's any noticible difference between starting and relief pitchers and the hand they throw with. 
+
+##Data and Package Loads 
+The "People" file contains biographical information on each player within Major League Baseball (MLB) from 1871 onward. The "Pitching" file contains information about a pitcher's performance, separated by the year that they played. This includes many of the common counting numbers and statistics used, such as innings pitched (IP) and earned run average (ERA). It also includes other items like the total number of batters faced in a year and home runs given up.
+
+```{r message = FALSE}
+#load the tidyverse and ggplot2 packages
+library(tidyverse)
+library(ggplot2)
+```
+```{r}
+#load people and pitchers files
+all_players <- read.csv(file = "People.csv")
+all_pitchers <- read.csv("Pitching.csv")
+```
+
+##Creating The Initial Datasets
+In order to look at the role of handedness in pitching we need to separate each pitcher into a righty or a lefty.  We'll also restrict our dataset to pitchers who played in 1973 or later.  This was the year that the designated hitter (DH) was introduced to baseball, and it allows us to look at historical data that plays by the same rules as modern baseball.
+
+A quick note about why we are filtering our 1973 player dataset to exclude switch pitchers.  There was one player, Pat Venditte, who faced about 200 batters between 2015 and 2016.  This is insignificant compared to the larger dataset, so we'll exclude his results since he's not classified as a righty or a lefty.
+
+```{r pressure, warning = FALSE}
+pitchers_1973 <- all_pitchers %>%
+  left_join(all_players, by = "playerID") %>%
+  filter(yearID >= 1973, throws != "S")
+```
+
+Let's take a look at the proportion of innings that righties and lefties throw each year, along with the total number of each type of pitcher each year.
+
+```{r echo = FALSE}
+ggplot(pitchers_1973, aes(x = yearID, y = IPouts, fill = throws)) + 
+  geom_col(position = "fill") + 
+  labs(title = "Percentage of Innings Thrown By Hand", x = "Year", y = "Innings Pitched in Outs", color = "Hand") + theme_classic()
+```
+
+It looks like left handers threw between 25%-30% of the innings in any given year.  While right handers dominate the number of innings thrown, left handers still throw a significant number.  Let's now define how we will evaluate whether a pitcher is effective or not.
+
+##Measuring Pitcher Effectiveness
+
+* **ERA** - Earned Run Average (ERA) is how many runs a pitcher allows per 9 innings, minus any runs where the batter reached base by error.  Without having any advanced stats such as FIP or xFIP, ERA is a decent enough measure of something pitchers need to be good at: not allowing runs to score.
+
+* **Outs Recorded** - Since there's no time limit is a baseball game, the only way it can end is for pitchers to record enough outs during the course of the game.  Another measure of pitcher effectiveness is how many outs they record compared to the number of batters they face during a game.
+
+###ERA
+
+```{r echo = FALSE, message = FALSE}
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  summarize(mean_ERA = mean(ERA, na.rm = TRUE)) %>%
+  ggplot(aes(x = yearID, y = mean_ERA, col = throws)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  labs(title = "ERA by Hand", x = "Year", y = "Average ERA", color = "Hand")
+```
+
+With ERA, the lower it is the better.  The ERA from left handers looks much more volatile year over year compared to right handers.  Some of this could be due to the number of innings left handers throw, but this volatility should be minimal with around 600 average innings thrown per year.  While the ERA for both kinds of pitchers gradually increased after 1992, the ERA for lefties appears to have done so significantly, with 2000, 2007, and 2012 being some examples of an extreme difference.  ERA for both righties and lefties have trended downward since the highwater mark around 2000, with 2013 and 2015 really effecting the lefties trend line.  Overall is seems that right handers have a better ERA than left handers.
+
+###Outs Recorded
+
+```{r echo = FALSE, message = FALSE}
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  summarize(PctOuts = sum(IPouts)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = PctOuts, col = throws)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  labs(title = "Outs Recorded Per Batter by Hand", x = "Year", y = "Pct of Outs Per Batter", color = "Hand")
+```
+
+This graph corresponds nicely with the ERA graph above, although it is opposite of ERA.  Here, a higher value represents a more effective pitcher.  As the ERA rose for pitchers, the percentage of batters that they got out decreased.  This makes intuitive sense: more runs means more baserunners which means fewer outs per batter.  In recent years as ERA has decreased the percentage of batters gotten out has increased.
+
+These increases and decreases have been seen  regardless of which hand is used.  However, lefties have gotten fewer of their batters out for the majority of the years that we are looking at.  The difference is only a fraction of a percent, but when there are more than 200,000 batters in a given year even small differences make a big impact.  Generally speaking, lefties are performing worse than their right handed counterparts with this metric.
+
+
+##What's Going On With the Lefties?
+
+We've seen that lefties have faired worse when it comes to our two criteria to measure success: ERA and recording outs. Let's look at a few more things, such as which group has better stats in home run allowed, strikeouts per batter, and walks per batter.  We'll also see if being a starting pitcher or a relief pitcher shows any further differences.
+
+###Home Runs Allowed
+
+One of the worst things a pitcher can do is allow a home run.  At least one run is guaranteed to score, and with the added "bonus" of not recording an out it can be a pitcher's worst nightmare.  Let's compare lefties and righties with the number of home runs they allow per batter faced.
+
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  summarize(HRAllowed = sum(HR)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = HRAllowed, col = throws)) + 
+  geom_point() + 
+  geom_line() + 
+  theme_classic() + 
+  geom_smooth(se = FALSE) +
+  labs(title = "Home Runs Per Batter By Hand", x = "Year", y = "Pct of HR Per Batter", color = "Hand")
+```
+
+Here we see that the home run rates per batter were very close, with lefties being marginally worse than righties, up until 1997.  After that year, the trend reversed, with lefties performing marginally better than righties and giving up fewer HRs on average.  Right handers appear in recent years to be giving up even more home runs than lefties per batter, past 3.5% compared to about 3.25% in 2017.  Again, this difference is very slight.  With such small differences and the home run rate being virtually similar in most years, it looks like this measurement is a wash.
+
+
+###Strikeouts Per Batter
+
+The exact opposite of a home run, the strikeout is one of the best things that a pitcher can do.  Unless something goes wrong, the batter is out, no runners on base advance, and no runs score.  This is the perfect result for a pitcher.
+
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  summarize(KPct = sum(SO)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = KPct, col = throws)) + 
+  geom_point() + 
+  geom_line() +
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  labs(title = "Strikeouts Per Batter By Hand", x = "Year", y = "Pct of K's Per Batter", color = "Hand")
+```
+
+There's a clear upward trend in our data, with batters striking out at an increasing rate in recent years.  One somewhat unexpected result is that righties and lefties have incredibly similar strikeout rates year over year.  Right handers had a slight advantage in the late 80s/early 90s, but since 2005 their numbers have mirrored each other quite well.
+
+###Walks Per Batter
+
+Walks aren't the worst thing that a pitcher can do, but they aren't great either.  Walks put another runner on the bases, and people on base are potential runs waiting to hurt a pitcher's ERA.  We will exclude intentional walks here, as those tend to be more reflective of manager strategy than pitcher effectiveness.
+
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  summarize(BBPct = sum(BB)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = BBPct, col = throws)) + 
+  geom_point() + 
+  geom_line() + 
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  labs(title = "Walks Per Batter By Hand", x = "Year", y = "Pct of BB's Per Batter", color = "Hand")
+```
+
+There is a clear delineation here after 1985 between walks given up by lefties v. righties.  In some years lefties are issuing almost 1% more walks per batter.  This may not seem like much, but consider 2006.
+
+```{r echo= FALSE}
+pitchers_1973 %>%
+  group_by(yearID, throws) %>%
+  filter(yearID == 2006) %>%
+  summarize("Batters Faced" = sum(BFP), Walks = sum(BB), "Walk Pct" = (sum(BB) / sum(BFP))*100)
+```
+Using the right handers percentage, lefties would have issued 411 fewer walks in 2006.  The higher walk rate for left handed pitchers certainly contributes to their increased ERA.
+
+###Started V. Relievers
+
+Let's look at one more breakdown to see if there's any difference between starts and relievers.  We'll consider a reliever to be any pitcher who started less than half of the games they appeared in.  
+
+```{r echo = FALSE, message = FALSE} 
+pitchers_1973 %>%
+  filter(IPouts > 0) %>%
+  mutate(Reliever = ifelse((GS/G) <= .5, "Reliever", "Starter")) %>%
+  group_by(yearID, throws, Reliever) %>%
+  summarize(mean_ERA = mean(ERA, na.RM = TRUE)) %>%
+  ggplot(aes(x = yearID, y = mean_ERA, col = Reliever)) +
+    geom_point() + 
+    geom_smooth(se = FALSE) +
+    theme_classic() + 
+    facet_grid(~throws) +
+    labs(title = "ERA For Starters/Relievers By Hand", x = "Year", y = "Avg ERA", color = "Hand")
+```
+
+There is a noticeable increase between starters and relievers for both left and right handed pitchers.  However, the increase year over year for right handers seems somewhat stable.  There are multiple large spikes in the left handed reliever ERA compared to the starter ERA.  While left handed starters seem to do better compared to right handed starters, left handed reliever perform worse overall than right handed relievers.  Some of this could be due to the fewer number of innings that relievers pitch, but you would expect the difference to not be so drastic between starters and relievers when looking at the hand they throw wit.
+
+Let's take a peek at our splits for the HR allowed, K's per batter, and walks per batter. 
+
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  filter(IPouts > 0) %>%
+  mutate(Reliever = ifelse((GS/G) <= .5, "Reliever", "Starter")) %>%
+  group_by(yearID, throws, Reliever) %>%
+  summarize(HRPct = sum(HR)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = HRPct, col = Reliever)) + 
+  geom_point() + 
+  theme_classic() + 
+  geom_smooth(se = FALSE) +
+  facet_grid(~throws) +
+  labs(title = "Home Runs Per Batter For Starters/Relievers By Hand", x = "Year", y = "Pct of HR's Per Batter", color = "Hand")
+```
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  filter(IPouts > 0) %>%
+  mutate(Reliever = ifelse((GS/G) <= .5, "Reliever", "Starter")) %>%
+  group_by(yearID, throws, Reliever) %>%
+  summarize(KPct = sum(SO)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = KPct, col = Reliever)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  facet_grid(~throws) +
+  labs(title = "Strikeouts Per Batter for Starters/Relievers By Hand", x = "Year", y = "Pct of K's Per Batter", color = "Hand")
+```
+```{r echo = FALSE, message = FALSE}
+
+pitchers_1973 %>%
+  filter(IPouts > 0) %>%
+  mutate(Reliever = ifelse((GS/G) <= .5, "Reliever", "Starter")) %>%
+  group_by(yearID, throws, Reliever) %>%
+  summarize(BBPct = sum(BB)/sum(BFP)) %>%
+  ggplot(aes(x = yearID, y = BBPct, col = Reliever)) + 
+  geom_point() + 
+  theme_classic() +
+  geom_smooth(se = FALSE) +
+  facet_grid(~throws) +
+  labs(title = "Walks Per Batter for Starters/Relievers By Hand", x = "Year", y = "Pct of BB's Per Batter", color = "Hand")
+```
+
+Here we've removed the connecting lines between years due to the extra compression created by splitting each graph by hand.  Even still, these all look similar to our inital runs where we did not split out the information by start or reliever.  With the exception of home runs, relievers generally fair worse than starters, and right handers perform better than left handers when using each evaluation method. The number of walks left handers give up compared to the number of batters they face contributes to their slightly higher ERA and slightly worse ability to get batters out.  Even though these differences are small, they matter when winning and losing is decided by 1 run.
+
